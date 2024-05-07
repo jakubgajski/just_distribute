@@ -3,7 +3,6 @@ from collections.abc import Iterable
 
 import requests
 import asyncio
-import ray
 
 from functools import wraps
 from time import time, sleep
@@ -31,22 +30,22 @@ def func_basic(x: int):
 
 @timing
 @distribute(job="io", workers=5)
-def func_io(x: int):
+def func_io(x: int, y: int):
     sleep(SLEEP)
-    return x
+    return x + y
 
 
 @timing
 @distribute(job="compute", workers=5)
-def func_compute(x: int):
+def func_compute(x: int, y: int):
     sleep(SLEEP)
-    return x
+    return x + y
 
 
 @timing
 @distribute(job="web", workers=10)
-async def func_web(x: int, *, url: str):
-    response = requests.post(url, json.dumps({"x": x}))
+async def func_web(x: int, y: int, *, url: str):
+    response = requests.post(url, json.dumps({"x": x + y}))
     await asyncio.sleep(SLEEP)
     return response.status_code
 
@@ -62,26 +61,36 @@ def func_basic_iter(x: Iterable):
 
 @timing
 @distribute(job="io", workers=8)
-def func_io_iter(x: Iterable):
+def func_io_iter(x: Iterable, y: Iterable):
     counter = 0
     for _ in x:
         counter += 1
         sleep(SLEEP / 1000)
-    return counter
+    return counter, sum(map(lambda a, b: a + b, x, y))
 
 
 @timing
 @distribute(job="compute", workers=8)
-def func_compute_iter(x: Iterable):
+def func_compute_iter(x: Iterable, y: Iterable):
     counter = 0
     for _ in x:
         counter += 1
         sleep(SLEEP / 1000)
-    return counter
+    return counter, sum(map(lambda a, b: a + b, x, y))
 
 
 @timing
 @distribute(job="ray")
-def func_ray(x: int):
+def func_ray(x: int, y: int):
     sleep(SLEEP)
-    return x
+    return x + y
+
+
+@timing
+@distribute(job="ray")
+def func_ray_iter(x: Iterable, y: Iterable):
+    counter = 0
+    for _ in x:
+        counter += 1
+        sleep(SLEEP / 1000)
+    return counter, sum(map(lambda a, b: a + b, x, y))

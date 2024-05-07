@@ -1,6 +1,5 @@
 import asyncio
 import inspect
-import queue as q
 import os
 from collections.abc import Collection, Iterable
 from concurrent.futures import ThreadPoolExecutor
@@ -12,6 +11,25 @@ import itertools as it
 import ray
 from pathos.multiprocessing import ProcessPool
 from psutil import cpu_count, cpu_percent
+
+
+def unpack_arguments_tuple(func: Callable) -> Callable:
+    """
+    Helper decorator to unpack arguments passed to the function.
+
+    Parameters
+    ----------
+    func: Callable
+
+    Returns
+    -------
+    Callable
+    """
+
+    def wrapper(pack: Collection):
+        return func(*pack)
+
+    return wrapper
 
 
 def batched(iterable, n):
@@ -34,6 +52,58 @@ def make_func_async(func: Callable):
     return wrapper
 
 
+def execute_web_type_workload(args, workers, func: Callable):
+    """
+    Execute web-type workload asynchronously with consumers and queue
+
+    Parameters
+    ----------
+    args: list
+    workers: int
+    func: Callable
+
+    Returns
+    -------
+    A flattened list aggregated across all consumers.
+    """
+    if not asyncio.iscoroutinefunction(func):
+        func = make_func_async(func)
+
+    queue = asyncio.Queue()
+    for idx, items in enumerate(zip(*args)):
+        queue.put_nowait((*items, idx))
+
+    return asyncio.run(consume_queue(queue, func, workers))
+
+
+def execute_ray_type_workload(args, func: Callable):
+    """
+    Execute workload on prepared ray cluster.
+
+    Parameters
+    ----------
+    args: list
+    func: Callable
+
+    Returns
+    -------
+    A flat list.
+    """
+    if not ray.is_initialized():
+        try:
+            ray.init(
+                os.environ["RAY_ADDRESS"], namespace="just_distribute"
+            )
+        except KeyError:
+            raise KeyError("just_distribure expects RAY_ADDRESS environment variable to be set and"
+                           " containing the address of a functioning and configured Ray cluster.")
+
+    wrapped_func = unpack_arguments_tuple(func)
+    ray_func = ray.remote(wrapped_func)
+    ray_data = [ray.put(elem) for elem in zip(*args)]
+    return ray.get([ray_func.remote(ref) for ref in ray_data])
+
+
 async def consumer(queue: asyncio.Queue, func: Callable) -> list:
     """
     Consumer to use only within consume_queue. Just calls passed on items from the queue.
@@ -51,10 +121,10 @@ async def consumer(queue: asyncio.Queue, func: Callable) -> list:
     responses = []
     while True:
         try:
-            item, idx = queue.get_nowait()
+            *items, idx = queue.get_nowait()
         except asyncio.queues.QueueEmpty:
             break
-        response = await func(item)
+        response = await func(*items)
         responses.append((response, idx))
         queue.task_done()
     return responses
@@ -112,13 +182,12 @@ def distribute(job: str = "compute", workers: int = None):
     [2, 3, 4, 5, 6]
     """
     if workers is None:
-        # half o available compute expressed in threads
-        _workers = (((100 - cpu_percent(1)) / 100) * cpu_count() / 2) // 1
+        # a half of available compute expressed in threads
+        _workers = int((((100 - cpu_percent(1)) / 100) * cpu_count() / 2) // 1)
     else:
         _workers = workers
 
     def decorator(func: Callable):
-
         # if first argument is by default Collection or Iterable, new argument must be batched
         first_arg_annotation = next(iter(signature(func).parameters.values())).annotation
 
@@ -130,7 +199,7 @@ def distribute(job: str = "compute", workers: int = None):
         )
 
         @wraps(func)
-        def wrapper(to_distribute: Collection | Iterable, **kwargs):
+        def wrapper(*args: Collection | Iterable, **kwargs):
 
             if kwargs:
                 part_func = partial(func, **kwargs)
@@ -138,45 +207,26 @@ def distribute(job: str = "compute", workers: int = None):
                 part_func = func
 
             if is_first_arg_collection:
-                to_distribute = list(batched(to_distribute, cpu_count() * 2))
+                args = [list(batched(arg, _workers * 2)) for arg in args]
 
-            if not isinstance(to_distribute, (Collection, Iterable)):
-                raise TypeError(f"Object {to_distribute} is neither a collection nor an iterable.")
+            if not all([isinstance(arg, (Collection, Iterable)) for arg in args]):
+                raise TypeError(f"Among objects {[arg for arg in args]} some are neither a collection nor an iterable.")
 
             if job in ("compute", "processes"):
                 with ProcessPool(nodes=_workers) as executor:
-                    return list(executor.map(part_func, to_distribute, chunksize=len(to_distribute) // _workers))
+                    return list(executor.map(part_func, *args, chunksize=len(args[0]) // _workers))
 
             elif job in ("io", "threads"):
                 with ThreadPoolExecutor(max_workers=_workers) as executor:
-                    return list(executor.map(part_func, to_distribute))
+                    return list(executor.map(part_func, *args))
 
             elif job in ("web", "coroutines"):
                 # assuming we have known amount of consumers, e.g. orchestrated via Nomad or Kubernetes
                 # we should feed them simultaneously although asynchronously
-                if not asyncio.iscoroutinefunction(part_func):
-                    part_func = make_func_async(part_func)
-
-                queue = asyncio.Queue()
-                for idx, item in enumerate(to_distribute):
-                    queue.put_nowait((item, idx))
-
-                return asyncio.run(consume_queue(queue, part_func, _workers))
+                return execute_web_type_workload(args, _workers, part_func)
 
             elif job in ("ray", "cluster"):
-                if not ray.is_initialized():
-                    print('RAY STATUS', ray.is_initialized())
-                    try:
-                        ray.init(
-                            os.environ["RAY_ADDRESS"], namespace="just_distribute"
-                        )
-                    except KeyError:
-                        raise KeyError("just_distribure expects RAY_ADDRESS environment variable to be set and"
-                                       " containing the address of a functioning and configured Ray cluster.")
-
-                ray_func = ray.remote(part_func)
-                ray_data = [ray.put(elem) for elem in to_distribute]
-                return ray.get([ray_func.remote(ref) for ref in ray_data])
+                return execute_ray_type_workload(args, part_func)
 
         return wrapper
 

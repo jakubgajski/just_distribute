@@ -1,7 +1,6 @@
 import os
 
 import pytest
-import ray
 import responses
 import subprocess
 from tests.primitives import *
@@ -10,19 +9,19 @@ from tests.primitives import *
 def test_decorator_io():
     _, normal_time = func_basic(2)
 
-    result, dist_time = func_io([1, 2, 3, 4, 5])
+    result, dist_time = func_io([1, 2, 3, 4, 5], [1] * 5)
 
     assert normal_time * 1.2 > dist_time
-    assert result == [1, 2, 3, 4, 5]
+    assert result == [2, 3, 4, 5, 6]
 
 
 def test_decorator_compute():
     _, normal_time = func_basic(2)
 
-    result, dist_time = func_compute([1, 2, 3, 4, 5])
+    result, dist_time = func_compute([1, 2, 3, 4, 5], [1] * 5)
 
     assert normal_time * 1.2 > dist_time
-    assert result == [1, 2, 3, 4, 5]
+    assert result == [2, 3, 4, 5, 6]
 
 
 @responses.activate
@@ -37,28 +36,32 @@ def test_decorator_web():
 
     _, normal_time = func_basic(2)
 
-    result, dist_time = func_web(range(10), url="https://httpswebpage.org/post")
+    result, dist_time = func_web(range(10), [1] * 10, url="https://httpswebpage.org/post")
 
     assert normal_time * 1.2 > dist_time
-    assert result == [i for i in range(10)]
+    assert result == [i + 1 for i in range(10)]
 
 
 def test_decorator_io_iter():
-    _, normal_time = func_basic_iter([i for i in range(1500)])
+    _, normal_time = func_basic_iter(range(1500))
 
-    result, dist_time = func_io_iter([i for i in range(1500)])
+    results, dist_time = func_io_iter(range(1500), range(1500))
+    counts, agg = zip(*results)
 
     assert normal_time > dist_time
-    assert sum(result) == 1500
+    assert sum(counts) == 1500
+    assert sum(agg) == 2 * sum(range(1500))
 
 
 def test_decorator_compute_iter():
-    _, normal_time = func_basic_iter([i for i in range(1500)])
+    _, normal_time = func_basic_iter(range(1500))
 
-    result, dist_time = func_compute_iter([i for i in range(1500)])
+    results, dist_time = func_compute_iter(range(1500), range(1500))
+    counts, agg = zip(*results)
 
     assert normal_time > dist_time
-    assert sum(result) == 1500
+    assert sum(counts) == 1500
+    assert sum(agg) == 2 * sum(range(1500))
 
 
 def test_decorator_ray():
@@ -68,7 +71,7 @@ def test_decorator_ray():
 
     _, normal_time = func_basic(2)
 
-    result, dist_time = func_ray([1, 2, 3, 4, 5])
+    result, dist_time = func_ray([1, 2, 3, 4, 5], [1] * 5)
 
     ray.shutdown()
     del os.environ["RAY_ADDRESS"]
@@ -76,7 +79,7 @@ def test_decorator_ray():
     subprocess.run(["ray", "stop"])
 
     assert normal_time * 1.2 > dist_time
-    assert result == [1, 2, 3, 4, 5]
+    assert result == [2, 3, 4, 5, 6]
 
 
 def test_decorator_ray_faulty():
@@ -85,8 +88,27 @@ def test_decorator_ray_faulty():
     # os.environ["RAY_ADDRESS"] = "localhost:8080"
 
     with pytest.raises(KeyError):
-        func_ray([1, 2, 3, 4, 5])
+        func_ray([1, 2, 3, 4, 5], [1] * 5)
 
     subprocess.run(["ray", "stop"])
 
 
+def test_decorator_ray_iter():
+    subprocess.run(["ray", "start", "--head", "--port=8080", "--num-cpus=8", "--disable-usage-stats"])
+    sleep(1)
+    os.environ["RAY_ADDRESS"] = "localhost:8080"
+
+    _, normal_time = func_basic_iter(range(1500))
+
+    results, dist_time = func_ray_iter(range(1500), range(1500))
+    counts, agg = zip(*results)
+
+    ray.shutdown()
+
+    del os.environ["RAY_ADDRESS"]
+
+    subprocess.run(["ray", "stop"])
+
+    assert normal_time > dist_time
+    assert sum(counts) == 1500
+    assert sum(agg) == 2 * sum(range(1500))
