@@ -9,6 +9,7 @@ readme = "README.md"
 python = "^3.11"
 psutil = "^5.9.8"
 pathos = "^0.3.2"
+ray = {extras = ["client"], version = "^2.20.0"}
 
 
 [tool.poetry.group.test.dependencies]

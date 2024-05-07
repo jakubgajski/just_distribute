@@ -1,14 +1,17 @@
-import inspect
-from concurrent.futures import ThreadPoolExecutor
 import asyncio
-from inspect import signature
-from functools import wraps, partial
-from typing import Callable
+import inspect
+import queue as q
+import os
 from collections.abc import Collection, Iterable
-import itertools as it
+from concurrent.futures import ThreadPoolExecutor
+from functools import wraps, partial
+from inspect import signature
+from typing import Callable
 
-from psutil import cpu_count, cpu_percent
+import itertools as it
+import ray
 from pathos.multiprocessing import ProcessPool
+from psutil import cpu_count, cpu_percent
 
 
 def batched(iterable, n):
@@ -143,9 +146,11 @@ def distribute(job: str = "compute", workers: int = None):
             if job in ("compute", "processes"):
                 with ProcessPool(nodes=_workers) as executor:
                     return list(executor.map(part_func, to_distribute, chunksize=len(to_distribute) // _workers))
+
             elif job in ("io", "threads"):
                 with ThreadPoolExecutor(max_workers=_workers) as executor:
                     return list(executor.map(part_func, to_distribute))
+
             elif job in ("web", "coroutines"):
                 # assuming we have known amount of consumers, e.g. orchestrated via Nomad or Kubernetes
                 # we should feed them simultaneously although asynchronously
@@ -157,6 +162,21 @@ def distribute(job: str = "compute", workers: int = None):
                     queue.put_nowait((item, idx))
 
                 return asyncio.run(consume_queue(queue, part_func, _workers))
+
+            elif job in ("ray", "cluster"):
+                if not ray.is_initialized():
+                    print('RAY STATUS', ray.is_initialized())
+                    try:
+                        ray.init(
+                            os.environ["RAY_ADDRESS"], namespace="just_distribute"
+                        )
+                    except KeyError:
+                        raise KeyError("just_distribure expects RAY_ADDRESS environment variable to be set and"
+                                       " containing the address of a functioning and configured Ray cluster.")
+
+                ray_func = ray.remote(part_func)
+                ray_data = [ray.put(elem) for elem in to_distribute]
+                return ray.get([ray_func.remote(ref) for ref in ray_data])
 
         return wrapper
 
