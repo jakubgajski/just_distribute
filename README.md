@@ -76,6 +76,8 @@ some_existing_io_intensive_function(data_store.values(), data_store.keys(), verb
 ```  
   
 #### Somewhere over the network :guitar:
+  
+Instead of:
 
 ```python
 def some_existing_web_requesting_function(data_to_send: dict, url: str, api_key: str):
@@ -103,6 +105,8 @@ some_existing_web_requesting_function(data_store, url="https://some_web_api.com/
 ```  
   
 #### Or in the existing Ray cluster  
+  
+Instead of:
   
 ```python
 def some_existing_cpu_intensive_function(x: int, y: int) -> int:
