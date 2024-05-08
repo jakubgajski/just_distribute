@@ -52,6 +52,36 @@ def make_func_async(func: Callable):
     return wrapper
 
 
+def alter_args_signature(func: Callable) -> Callable:
+    """
+    Alters the signature of a function if args are non-iterable, non-collection primitives
+    into a list[ArgType].
+
+    Parameters
+    ----------
+    func: Callable
+
+    Returns
+    -------
+    Callable
+    """
+    old_signature = inspect.signature(func)
+    old_signature_list = list(old_signature.parameters.values())
+
+    altered = []
+    for param in old_signature_list:
+        if param.kind == inspect.Parameter.VAR_POSITIONAL and not issubclass(param.annotation, Iterable):
+            new_param = inspect.Parameter(param.name, inspect.Parameter.VAR_POSITIONAL,
+                                          annotation=list[param.annotation])
+            altered.append(new_param)
+
+    new_signature_list = altered + old_signature_list[len(altered):]
+    new_signature = inspect.Signature(parameters=new_signature_list)
+
+    func.__signature__ = new_signature
+    return func
+
+
 def execute_web_type_workload(args, workers, func: Callable):
     """
     Execute web-type workload asynchronously with consumers and queue
@@ -151,7 +181,7 @@ async def consume_queue(queue: asyncio.Queue, func: Callable, workers: int) -> l
     return [item for item, idx in sorted(results, key=lambda x: x[1])]
 
 
-def distribute(job: str = "compute", workers: int = None):
+def distribute(job: str = "compute", workers: int = None, autobatch: bool = True) -> Callable:
     """
     Distributes function that process arbitrary object across chosen worker types.
     Essentially making it a function that process a sequence of objects in parallel.
@@ -159,11 +189,19 @@ def distribute(job: str = "compute", workers: int = None):
     Parameters
     ----------
     job: str
-        Type of job to be distributed. Can be 'compute' aka 'processes', 'io' aka 'threads' or 'web' aka 'coroutines'.
-        'compute' leverages processes, 'io' leverages threads, 'web' leverages coroutines.
+        Type of job to be distributed. Can be 'compute' aka 'processes', 'io' aka 'threads', 'web' aka 'coroutines'
+        or 'ray' aka 'cluster'.
+        'compute' leverages processes, 'io' leverages threads, 'web' leverages coroutines, 'ray' leverages ray cluster.
     workers: int
         Number of workers to be used. If None, the number of workers equals to the number of half available threads
-        on the machine, regardless of the job type.
+        on the machine, regardless of the job type. Ignored for job='ray'.
+    autobatch: bool
+        If True and wrapped function takes an Iterable[Something] as an argument(s) of interest, decorator assumes that
+        user will pass just (possibly longer) Iterable[Something] of and not an Iterable[Iterable[Something]].
+        In case of an Iterable[Something], the decorator will batch the input automatically into
+        an Iterable[Iterable[Something]] to distribute sub-iterables across workers. User can of course set autobatch
+        to False and provide prepared Iterable[Iterable[Something]] manually, but equal length of all arguments
+        of interest must be preserved.
 
     Returns
     -------
@@ -188,15 +226,12 @@ def distribute(job: str = "compute", workers: int = None):
         _workers = workers
 
     def decorator(func: Callable):
-        # if first argument is by default Collection or Iterable, new argument must be batched
-        first_arg_annotation = next(iter(signature(func).parameters.values())).annotation
+        func_params = signature(func).parameters
+        func_params_vals = list(func_params.values())
+        func_params_kinds = {param.name: param.kind for param in func_params_vals}
 
-        if first_arg_annotation is inspect.Parameter.empty:
-            raise TypeError(f"Function {func} first argument has to be annotated with typehint.")
-
-        is_first_arg_collection = issubclass(
-            first_arg_annotation, (Collection, Iterable)
-        )
+        if any([param.annotation is inspect.Parameter.empty for param in func_params_vals]):
+            raise TypeError(f"Function {func} must be annotated with typehints.")
 
         @wraps(func)
         def wrapper(*args: Collection | Iterable, **kwargs):
@@ -206,10 +241,33 @@ def distribute(job: str = "compute", workers: int = None):
             else:
                 part_func = func
 
-            if is_first_arg_collection:
-                args = [list(batched(arg, _workers * 2)) for arg in args]
+            used_args = [name for name in func_params_kinds if name not in kwargs]
+            args_lengths = len(set(len(arg) for arg in args))
 
-            if not all([isinstance(arg, (Collection, Iterable)) for arg in args]):
+            if autobatch and all(
+                    [issubclass(func_params[name].annotation, Iterable) for name in used_args]
+            ) and args_lengths == 1:
+                args = [list(batched(args[i], _workers * 2)) for i in range(len(args))]
+
+            elif autobatch and any(
+                    [not issubclass(func_params[name].annotation, Iterable) for name in used_args]
+            ) and args_lengths != 1:
+                # some need to be batched and others not (weren't Iterables in the wrapped function)
+                min_length = min([len(arg) for arg in args])
+                max_length = max([len(arg) for arg in args])
+
+                if max_length % min_length != 0:
+                    raise ValueError(f"Passed arguments' lengths are incompatible thus autobatch is not possible. "
+                                     f"Tried to autobatch for arguments with lengths {[len(arg) for arg in args]}.")
+
+                args = [list(batched(arg, len(arg) // min_length)) for arg in args]
+
+            elif not autobatch and args_lengths != 1:
+                raise ValueError(f"Passed arguments' lengths are incompatible."
+                                 f"Tried to distribute workload for arguments with "
+                                 f" lengths {[len(arg) for arg in args]}.")
+
+            if not all([isinstance(arg, Iterable) for arg in args]):
                 raise TypeError(f"Among objects {[arg for arg in args]} some are neither a collection nor an iterable.")
 
             if job in ("compute", "processes"):
@@ -228,6 +286,6 @@ def distribute(job: str = "compute", workers: int = None):
             elif job in ("ray", "cluster"):
                 return execute_ray_type_workload(args, part_func)
 
-        return wrapper
+        return alter_args_signature(wrapper)
 
     return decorator

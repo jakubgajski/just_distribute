@@ -9,8 +9,8 @@ from time import time, sleep
 
 from just_distribute import distribute
 
-
 SLEEP = 2
+
 
 def timing(func):
     @wraps(func)

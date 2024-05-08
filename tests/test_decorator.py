@@ -1,6 +1,7 @@
 import os
 
 import pytest
+import ray
 import responses
 import subprocess
 from tests.primitives import *
