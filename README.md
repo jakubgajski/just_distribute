@@ -8,6 +8,16 @@ Please, don't be sad - just distribute.
 ```bash
 pip install just-distibute
 ```
+   
+### TL;DR  
+   
+```python
+from just_distribute import distribute
+
+@distribute(job='compute', workers=8)  # job in ('compute', 'io', 'web', 'ray')
+def your_time_consuming_func(*args):
+    ...
+```
   
 ### Getting Started  
    
