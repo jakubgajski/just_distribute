@@ -2,8 +2,16 @@
 name = "just-distribute"
 version = "0.1.0"
 description = "Provides a @distribute decorator that enables concurrent execution of functions without boilerplate code."
+license = "MIT"
 authors = ["Jakub Gajski <jakub.gajski@gmail.com>"]
 readme = "README.md"
+repository = "https://github.com/jakubgajski/just_distribute"
+keywords = ["concurrency", "parallelism", "concurrent", "parallel", "decorator", "distributed"]
+packages = [
+    { include = "just_distribute" },
+]
+
+[tool.poetry.group.test]
 
 [tool.poetry.dependencies]
 python = "^3.11"
