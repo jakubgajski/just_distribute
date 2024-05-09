@@ -33,7 +33,7 @@ Instead of:
 def some_existing_cpu_intensive_function(x: int, y: int) -> int:
     ...
 
-# slow, probably need to rewrite it :sob:
+# slow, probably need to rewrite it ;(
 results = []
 for const1, const2 in range(1000), range(4000, 2000, -2):
     results.append(
@@ -63,7 +63,7 @@ Instead of:
 def some_existing_io_intensive_function(data_to_write: bytes, filename: str, verbose: bool = True):
     ...
 
-# slow, probably need to rewrite it :sob:
+# slow, probably need to rewrite it ;(
 data_store: dict = ...  # some processed data to save
 for name, data in data_store.items():
     some_existing_io_intensive_function(data, name)
@@ -93,7 +93,7 @@ Instead of:
 def some_existing_web_requesting_function(data_to_send: dict, url: str, api_key: str):
     ...
 
-# slow, probably need to rewrite it :sob:
+# slow, probably need to rewrite it ;(
 data_store: list[dict] = ...  # some data to process on a remote service
 for data in data_store:
     some_existing_web_requesting_function(data, url="https://some_web_api.com/process", api_key="***")
@@ -122,7 +122,7 @@ Instead of:
 def some_existing_cpu_intensive_function(x: int, y: int) -> int:
     ...
 
-# slow, probably need to rewrite it :sob:
+# slow, probably need to rewrite it ;(
 results = []
 for const1, const2 in range(1000), range(4000, 2000, -2):
     results.append(
