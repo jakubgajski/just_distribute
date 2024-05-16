@@ -35,7 +35,7 @@ def some_existing_cpu_intensive_function(x: int, y: int) -> int:
 
 # slow, probably need to rewrite it ;(
 results = []
-for const1, const2 in range(1000), range(4000, 2000, -2):
+for const1, const2 in zip(range(1000), range(4000, 2000, -2)):
     results.append(
         some_existing_cpu_intensive_function(const1, const2)    
     )
@@ -124,7 +124,7 @@ def some_existing_cpu_intensive_function(x: int, y: int) -> int:
 
 # slow, probably need to rewrite it ;(
 results = []
-for const1, const2 in range(1000), range(4000, 2000, -2):
+for const1, const2 in zip(range(1000), range(4000, 2000, -2)):
     results.append(
         some_existing_cpu_intensive_function(const1, const2)    
     )
