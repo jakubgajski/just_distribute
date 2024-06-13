@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "just-distribute"
-version = "0.1.0"
+version = "0.1.1"
 description = "Provides a @distribute decorator that enables concurrent execution of functions without boilerplate code."
 license = "MIT"
 authors = ["Jakub Gajski <jakub.gajski@gmail.com>"]
@@ -14,7 +14,7 @@ packages = [
 [tool.poetry.group.test]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.10"
 psutil = "^5.9.8"
 pathos = "^0.3.2"
 ray = {extras = ["client"], version = "^2.20.0"}
