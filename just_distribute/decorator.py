@@ -5,12 +5,16 @@ from collections.abc import Collection, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps, partial
 from inspect import signature
-from typing import Callable
+from typing import Callable, Literal
 
 import itertools as it
 import ray
 from pathos.multiprocessing import ProcessPool
 from psutil import cpu_count, cpu_percent
+
+
+# job types names supported by the @distribute decorator
+JobTypes = Literal["compute", "io", "web", "ray", "cluster", "threads", "coroutines", "processes"]
 
 
 def unpack_arguments_tuple(func: Callable) -> Callable:
@@ -181,7 +185,8 @@ async def consume_queue(queue: asyncio.Queue, func: Callable, workers: int) -> l
     return [item for item, idx in sorted(results, key=lambda x: x[1])]
 
 
-def distribute(job: str = "compute", workers: int = None, autobatch: bool = True) -> Callable:
+def distribute(job: JobTypes = "compute",
+               workers: int = None, autobatch: bool = True) -> Callable:
     """
     Distributes function that process arbitrary object across chosen worker types.
     Essentially making it a function that process a sequence of objects in parallel.
@@ -209,15 +214,17 @@ def distribute(job: str = "compute", workers: int = None, autobatch: bool = True
 
     Examples
     --------
+    ```python
     >>> @distribute(job='compute', workers=4)
     >>> def func(x: int, operation: str = 'sub'):
-    >>>     if operation == 'add':
-    >>>         return x + 1
-    >>>     else:
-    >>>         return x - 1
+    >>>      if operation == 'add':
+    >>>          return x + 1
+    >>>      else:
+    >>>          return x - 1
 
     >>> func([1, 2, 3, 4, 5], operation='add')
     [2, 3, 4, 5, 6]
+    ```
     """
     if workers is None:
         # a half of available compute expressed in threads
