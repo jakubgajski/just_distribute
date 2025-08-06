@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "just-distribute"
-version = "0.1.4"
+version = "0.1.5"
 description = "Provides a @distribute decorator that enables concurrent execution of functions without boilerplate code."
 license = "MIT"
 authors = ["Jakub Gajski <jakub.gajski@gmail.com>"]
