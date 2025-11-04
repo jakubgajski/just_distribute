@@ -1,11 +1,11 @@
 import asyncio
 import inspect
 import os
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps, partial
 from inspect import signature
-from typing import Callable, Literal
+from typing import Callable, Literal, get_origin
 
 import itertools as it
 import ray
@@ -59,7 +59,7 @@ def make_func_async(func: Callable):
 def alter_args_signature(func: Callable) -> Callable:
     """
     Alters the signature of a function if args are non-iterable, non-collection primitives
-    into a list[ArgType].
+    into a Sequence[ArgType].
 
     Parameters
     ----------
@@ -74,13 +74,54 @@ def alter_args_signature(func: Callable) -> Callable:
 
     altered = []
     for param in old_signature_list:
-        if param.kind == inspect.Parameter.VAR_POSITIONAL and not issubclass(param.annotation, Iterable):
-            new_param = inspect.Parameter(param.name, inspect.Parameter.VAR_POSITIONAL,
-                                          annotation=list[param.annotation])
-            altered.append(new_param)
+        # Skip special parameter kinds
+        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+            altered.append(param)
+            continue
 
-    new_signature_list = altered + old_signature_list[len(altered):]
-    new_signature = inspect.Signature(parameters=new_signature_list)
+        # Skip keyword-only parameters (they remain unchanged)
+        if param.kind == inspect.Parameter.KEYWORD_ONLY:
+            altered.append(param)
+            continue
+
+        # Check if parameter annotation is a non-iterable, non-collection primitive
+        original_annotation = param.annotation
+        if original_annotation is not inspect.Parameter.empty:
+            try:
+                # Check if the annotation is a subclass of Iterable or Collection
+                if inspect.isclass(original_annotation) and (
+                    issubclass(original_annotation, Iterable) or issubclass(original_annotation, Collection)
+                ):
+                    # Iterable/Collection type - wrap in Sequence
+                    new_annotation = Sequence[original_annotation]
+                else:
+                    # Non-iterable primitive - wrap in Sequence
+                    new_annotation = Sequence[original_annotation]
+            except TypeError:
+                # Handle generic types or special forms that don't work with issubclass
+                origin = get_origin(original_annotation)
+                if origin is not None:
+                    # It's a generic type (e.g., list[int], Iterable[str])
+                    # Wrap it in Sequence
+                    new_annotation = Sequence[original_annotation]
+                else:
+                    # Fallback: wrap in Sequence
+                    new_annotation = Sequence[original_annotation]
+        else:
+            new_annotation = inspect.Parameter.empty
+
+        new_param = inspect.Parameter(
+            param.name,
+            param.kind,
+            default=param.default,
+            annotation=new_annotation
+        )
+        altered.append(new_param)
+
+    new_signature = inspect.Signature(
+        parameters=altered,
+        return_annotation=list if old_signature.return_annotation is inspect.Signature.empty else list[old_signature.return_annotation]
+    )
 
     func.__signature__ = new_signature
     return func
@@ -293,6 +334,8 @@ def distribute(job: JobTypes = "compute",
             elif job in ("ray", "cluster"):
                 return execute_ray_type_workload(args, part_func)
 
-        return alter_args_signature(wrapper)
+        # Alter the signature after wrapping
+        wrapper = alter_args_signature(wrapper)
+        return wrapper
 
     return decorator
