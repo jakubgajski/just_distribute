@@ -1,31 +1,45 @@
-[tool.poetry]
+[project]
 name = "just-distribute"
 version = "0.1.5"
 description = "Provides a @distribute decorator that enables concurrent execution of functions without boilerplate code."
-license = "MIT"
-authors = ["Jakub Gajski <jakub.gajski@gmail.com>"]
+authors = [{ name = "Jakub Gajski", email = "jakub.gajski@gmail.com" }]
+requires-python = ">=3.10"
 readme = "README.md"
-repository = "https://github.com/jakubgajski/just_distribute"
-keywords = ["concurrency", "parallelism", "concurrent", "parallel", "decorator", "distributed"]
-packages = [
-    { include = "just_distribute" },
+license = "MIT"
+keywords = [
+    "concurrency",
+    "parallelism",
+    "concurrent",
+    "parallel",
+    "decorator",
+    "distributed",
+]
+dependencies = [
+    "psutil>=5.9.8,<6",
+    "pathos>=0.3.2,<0.4",
+    "protobuf>=6.31.1",
+    "requests>=2.32.4",
+    "ray[client]>=2.43.0,<3",
 ]
 
-[tool.poetry.group.test]
+[project.urls]
+Repository = "https://github.com/jakubgajski/just_distribute"
 
-[tool.poetry.dependencies]
-python = "^3.10"
-psutil = "^5.9.8"
-pathos = "^0.3.2"
-protobuf = ">=6.31.1"
-requests = ">=2.32.4"
-ray = {extras = ["client"], version = "^2.43.0"}
+[dependency-groups]
+test = [
+    "responses>=0.25.0,<0.26",
+    "pytest>=8.1.1,<9",
+]
 
+[tool.uv]
+default-groups = ["test"]
 
-[tool.poetry.group.test.dependencies]
-responses = "^0.25.0"
-pytest = "^8.1.1"
+[tool.hatch.build.targets.sdist]
+include = ["just_distribute"]
+
+[tool.hatch.build.targets.wheel]
+include = ["just_distribute"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
