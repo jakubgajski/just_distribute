@@ -1,6 +1,6 @@
 [project]
 name = "just-distribute"
-version = "0.1.5"
+version = "0.1.6"
 description = "Provides a @distribute decorator that enables concurrent execution of functions without boilerplate code."
 authors = [{ name = "Jakub Gajski", email = "jakub.gajski@gmail.com" }]
 requires-python = ">=3.10"
